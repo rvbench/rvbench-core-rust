@@ -19,6 +19,8 @@ pub mod json;
 pub use json::{load_json, parse_json, spec_digest};
 
 pub const SPEC: &str = include_str!("../openapi.json");
+/// Minimal valid JobRequest used by manager / worker tests and tooling.
+pub const EXAMPLE_JOB: &str = include_str!("../examples/job.json");
 pub fn validate(name: &str, value: &Value) -> Result<()> {
     static VALIDATORS: OnceLock<std::collections::HashMap<String, jsonschema::Validator>> =
         OnceLock::new();
