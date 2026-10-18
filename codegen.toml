@@ -1,4 +1,5 @@
 [generator]
+# openapi.json 是主仓 rvbench/contracts/openapi.json 的发布副本，用 tools/sync_contract.py 同步。
 spec_path = "openapi.json"
 output_dir = "generated"
 module_name = "rvbench_protocol"
