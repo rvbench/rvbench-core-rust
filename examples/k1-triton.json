@@ -1,0 +1,12 @@
+{
+  "backend": "k1",
+  "implementation": "triton",
+  "kind": "correctness",
+  "op": "abs",
+  "shape": [4096],
+  "dtype": "float32",
+  "seed": 42,
+  "warmup": 3,
+  "repetitions": 10,
+  "timeout_secs": 180
+}

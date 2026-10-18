@@ -1,0 +1,12 @@
+{
+  "backend": "k3",
+  "implementation": "native-c",
+  "kind": "correctness",
+  "op": "add",
+  "shape": [4096],
+  "dtype": "float32",
+  "seed": 42,
+  "warmup": 3,
+  "repetitions": 10,
+  "timeout_secs": 180
+}

@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "format": "text/plain; version=0.0.4",
+  "sources": ["manager", "worker"],
+  "job_dimensions": ["backend", "kind", "state", "origin"],
+  "worker_identity_dimensions": ["board_id", "worker_id"],
+  "forbidden_dimensions": ["job_id", "attempt_id", "lease_id", "instance_id", "source", "error"],
+  "metrics": [
+    {"name": "rvbench_{service}_up", "type": "gauge", "unit": "boolean"},
+    {"name": "rvbench_{service}_jobs", "type": "gauge", "unit": "jobs", "labels": ["backend", "kind", "state", "origin"]},
+    {"name": "rvbench_{service}_jobs_submitted_total", "type": "counter", "unit": "jobs", "labels": ["backend", "kind", "origin"], "durability": "retained-job-ledger"},
+    {"name": "rvbench_{service}_jobs_completed_total", "type": "counter", "unit": "jobs", "labels": ["backend", "kind", "state", "origin"], "durability": "retained-job-ledger"},
+    {"name": "rvbench_{service}_phase_duration_seconds", "type": "histogram", "unit": "seconds", "labels": ["component", "kind", "outcome", "origin"], "durability": "terminal-phase-timings"},
+    {"name": "rvbench_{service}_queue_wait_seconds", "type": "histogram", "unit": "seconds", "labels": ["component", "kind", "outcome", "origin"], "durability": "terminal-phase-timings"},
+    {"name": "rvbench_manager_assignments", "type": "gauge", "unit": "assignments", "labels": ["worker_id", "board_id", "backend", "phase"]},
+    {"name": "rvbench_manager_worker_online", "type": "gauge", "unit": "boolean"},
+    {"name": "rvbench_manager_worker_ready", "type": "gauge", "unit": "boolean"},
+    {"name": "rvbench_manager_worker_last_seen_timestamp_seconds", "type": "gauge", "unit": "unix-seconds"},
+    {"name": "rvbench_worker_outbox_pending", "type": "gauge", "unit": "events"},
+    {"name": "rvbench_worker_outbox_oldest_age_seconds", "type": "gauge", "unit": "seconds"},
+    {"name": "rvbench_http_requests_total", "type": "counter", "unit": "requests", "labels": ["route", "method", "status"], "durability": "process"},
+    {"name": "process_start_time_seconds", "type": "gauge", "unit": "unix-seconds"},
+    {"name": "rvbench_scrape_cache_updated_timestamp_seconds", "type": "gauge", "unit": "unix-seconds"}
+  ],
+  "histogram_buckets_seconds": [0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300, 1800, "+Inf"]
+}

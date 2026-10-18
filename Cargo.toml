@@ -1,0 +1,20 @@
+[package]
+name = "rvbench-protocol"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+jsonschema = { version = "0.49.9", default-features = false }
+rusqlite = { version = "0.37", features = ["bundled"] }
+ryu = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision", "float_roundtrip"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,1212 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "rvbench shared control protocol",
+    "version": "1.0.0",
+    "description": "Contract-first wire authority. No authentication. func invokes compiler only; evaluator kinds are correctness and performance."
+  },
+  "security": [],
+  "paths": {},
+  "components": {
+    "schemas": {
+      "JobKind": {
+        "type": "string",
+        "enum": [
+          "func",
+          "correctness",
+          "performance"
+        ]
+      },
+      "EvaluatorKind": {
+        "type": "string",
+        "enum": [
+          "correctness",
+          "performance"
+        ]
+      },
+      "BackendId": {
+        "type": "string",
+        "enum": [
+          "k3",
+          "k1"
+        ]
+      },
+      "KernelImplementation": {
+        "type": "string",
+        "enum": ["native-c", "triton"],
+        "description": "Operator implementation, independent of hardware backend. Omission preserves legacy defaults: k1=native-c, k3=triton."
+      },
+      "DeliveryMode": {
+        "type": "string",
+        "enum": [
+          "push",
+          "pull",
+          "hybrid"
+        ]
+      },
+      "JobState": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "done",
+          "failed",
+          "timeout",
+          "canceled"
+        ]
+      },
+      "PhaseStatus": {
+        "type": "string",
+        "enum": [
+          "passed",
+          "failed",
+          "skipped",
+          "not_required"
+        ]
+      },
+      "JobRequest": {
+        "type": "object",
+        "properties": {
+          "implementation": {
+            "$ref": "#/components/schemas/KernelImplementation"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/BackendId"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "op": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,47}$"
+          },
+          "shape": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16777216
+            },
+            "minItems": 1,
+            "maxItems": 6
+          },
+          "dtype": {
+            "type": "string",
+            "enum": [
+              "float32",
+              "float16"
+            ]
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "warmup": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "repetitions": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "timeout_secs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1800
+          },
+          "client_request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 1048576
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Opaque user metadata only. Does not change execution or scheduling semantics."
+          }
+        },
+        "required": [
+          "backend",
+          "kind",
+          "op",
+          "shape",
+          "dtype",
+          "seed",
+          "warmup",
+          "repetitions",
+          "timeout_secs"
+        ],
+        "additionalProperties": false,
+        "description": "Canonical UTF-8 request is at most 2097152 bytes. source is additionally limited to 1048576 UTF-8 bytes. Assignment/event envelopes may contain the request twice."
+      },
+      "Artifact": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "size_bytes"
+        ],
+        "additionalProperties": false
+      },
+      "PhaseResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/PhaseStatus"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Artifact"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "details",
+          "artifacts"
+        ],
+        "additionalProperties": false
+      },
+      "JobRecord": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobState"
+          },
+          "request": {
+            "$ref": "#/components/schemas/JobRequest"
+          },
+          "worker_id": {
+            "type": "string"
+          },
+          "board_id": {
+            "type": "string"
+          },
+          "instance_id": {
+            "type": "string",
+            "pattern": "^$|^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "submitted_at": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "finished_at": {
+            "type": "string"
+          },
+          "compilation": {
+            "$ref": "#/components/schemas/PhaseResult"
+          },
+          "evaluation": {
+            "$ref": "#/components/schemas/PhaseResult"
+          },
+          "error": {
+            "type": "string"
+          },
+          "logs": {
+            "type": "string"
+          },
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lease_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phase_timings_seconds": {
+            "type": "object",
+            "properties": {
+              "compiler": {
+                "type": "number",
+                "minimum": 0
+              },
+              "evaluator": {
+                "type": "number",
+                "minimum": 0
+              },
+              "queue_wait": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "job_id",
+          "state",
+          "request",
+          "worker_id",
+          "board_id",
+          "instance_id",
+          "submitted_at",
+          "logs"
+        ],
+        "additionalProperties": false
+      },
+      "WorkerRegistration": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "board_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/BackendId"
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobKind"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/DeliveryMode"
+          },
+          "url": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "direct_active": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 64
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "environment": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "protocol_version": {
+            "type": "string",
+            "enum": [
+              "1.0.0"
+            ]
+          },
+          "observability": {
+            "$ref": "#/components/schemas/ObservabilityRegistration"
+          }
+        },
+        "required": [
+          "worker_id",
+          "board_id",
+          "instance_id",
+          "backend",
+          "kinds",
+          "delivery",
+          "url",
+          "capacity",
+          "direct_active",
+          "ready",
+          "environment",
+          "protocol_version"
+        ],
+        "additionalProperties": false
+      },
+      "Assignment": {
+        "type": "object",
+        "properties": {
+          "assignment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lease_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "worker_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "manager_epoch": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "request_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expires_at": {
+            "type": "number"
+          },
+          "request": {
+            "$ref": "#/components/schemas/JobRequest"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "attempt_id",
+          "lease_id",
+          "job_id",
+          "worker_id",
+          "instance_id",
+          "manager_epoch",
+          "request_sha256",
+          "expires_at",
+          "request"
+        ],
+        "additionalProperties": false
+      },
+      "WorkerSubmission": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/JobRequest"
+          },
+          "assignment": {
+            "$ref": "#/components/schemas/Assignment"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "additionalProperties": false
+      },
+      "ClaimRequest": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "wait_s": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 25
+          }
+        },
+        "required": [
+          "worker_id",
+          "instance_id",
+          "request_id",
+          "wait_s"
+        ],
+        "additionalProperties": false,
+        "description": "Idempotent claim. Nonempty receipts retained with attempts; empty receipts replay for at least 300 seconds."
+      },
+      "Ack": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lease_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "worker_job_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "worker_id",
+          "instance_id",
+          "lease_id",
+          "worker_job_id"
+        ],
+        "additionalProperties": false
+      },
+      "JobEvent": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "event_seq": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "assignment": {
+            "$ref": "#/components/schemas/Assignment"
+          },
+          "record": {
+            "$ref": "#/components/schemas/JobRecord"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_seq",
+          "assignment",
+          "record"
+        ],
+        "additionalProperties": false
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "ObservabilityRegistration": {
+        "type": "object",
+        "properties": {
+          "metrics_version": {
+            "type": "string",
+            "enum": [
+              "1.0.0"
+            ]
+          },
+          "metrics_path": {
+            "type": "string",
+            "enum": [
+              "/metrics"
+            ]
+          },
+          "host_metrics_url": {
+            "type": "string",
+            "pattern": "^http://[^/]+/metrics$"
+          }
+        },
+        "required": [
+          "metrics_version",
+          "metrics_path"
+        ],
+        "additionalProperties": false
+      },
+      "CountEntry": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobState"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "managed"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "kind",
+          "state",
+          "origin",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "ObservedWorker": {
+        "type": "object",
+        "properties": {
+          "worker": {
+            "$ref": "#/components/schemas/WorkerRegistration"
+          },
+          "last_seen": {
+            "type": "number"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "drained": {
+            "type": "boolean"
+          },
+          "pending_ack": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "acknowledged": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "uncertain": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "worker",
+          "last_seen",
+          "online",
+          "drained",
+          "pending_ack",
+          "acknowledged",
+          "uncertain"
+        ],
+        "additionalProperties": false
+      },
+      "CollectionHealth": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "unavailable"
+            ]
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_success_at": {
+            "type": "number"
+          },
+          "targets_total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "targets_up": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CollectionTarget"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "errors"
+        ],
+        "additionalProperties": false
+      },
+      "ObservationSummary": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "enum": [
+              "1.0.0"
+            ]
+          },
+          "generated_at": {
+            "type": "number"
+          },
+          "service": {
+            "type": "string",
+            "enum": [
+              "manager",
+              "worker"
+            ]
+          },
+          "counts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CountEntry"
+            }
+          },
+          "workers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObservedWorker"
+            }
+          },
+          "outbox_pending": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outbox_oldest_age_seconds": {
+            "type": "number"
+          },
+          "collection": {
+            "$ref": "#/components/schemas/CollectionHealth"
+          }
+        },
+        "required": [
+          "schema_version",
+          "generated_at",
+          "service",
+          "counts",
+          "workers",
+          "outbox_pending",
+          "outbox_oldest_age_seconds",
+          "collection"
+        ],
+        "additionalProperties": false
+      },
+      "DiscoveryTarget": {
+        "type": "object",
+        "properties": {
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "targets",
+          "labels"
+        ],
+        "additionalProperties": false
+      },
+      "RangeQuery": {
+        "type": "object",
+        "properties": {
+          "metric_id": {
+            "type": "string",
+            "enum": [
+              "cpu_percent",
+              "x100_cpu_percent",
+              "a100_cpu_percent",
+              "memory_percent",
+              "disk_percent",
+              "temperature_c",
+              "load1",
+              "queue_depth",
+              "running",
+              "throughput",
+              "submissions",
+              "completed",
+              "outbox",
+              "collection_up"
+            ]
+          },
+          "board_id": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "worker_id": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "start": {
+            "type": "number"
+          },
+          "end": {
+            "type": "number"
+          },
+          "step_seconds": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 3600
+          }
+        },
+        "required": [
+          "metric_id",
+          "start",
+          "end",
+          "step_seconds"
+        ],
+        "additionalProperties": false
+      },
+      "MetricPoint": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "timestamp"
+        ],
+        "additionalProperties": false
+      },
+      "MetricSeries": {
+        "type": "object",
+        "properties": {
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetricPoint"
+            }
+          },
+          "last_sample_at": {
+            "type": "number"
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "labels",
+          "points",
+          "stale"
+        ],
+        "additionalProperties": false
+      },
+      "MetricRange": {
+        "type": "object",
+        "properties": {
+          "metric_id": {
+            "type": "string",
+            "enum": [
+              "cpu_percent",
+              "x100_cpu_percent",
+              "a100_cpu_percent",
+              "memory_percent",
+              "disk_percent",
+              "temperature_c",
+              "load1",
+              "queue_depth",
+              "running",
+              "throughput",
+              "submissions",
+              "completed",
+              "outbox",
+              "collection_up"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "generated_at": {
+            "type": "number"
+          },
+          "step_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetricSeries"
+            }
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "metric_id",
+          "unit",
+          "generated_at",
+          "step_seconds",
+          "series",
+          "partial",
+          "errors"
+        ],
+        "additionalProperties": false
+      },
+      "ResultQuery": {
+        "type": "object",
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/BackendId"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobState"
+          },
+          "op": {
+            "type": "string",
+            "maxLength": 48
+          },
+          "worker_id": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "search": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "ResultEntry": {
+        "type": "object",
+        "properties": {
+          "implementation": {
+            "$ref": "#/components/schemas/KernelImplementation"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "submitted_at": {
+            "type": "string"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/BackendId"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobState"
+          },
+          "op": {
+            "type": "string"
+          },
+          "shape": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "dtype": {
+            "type": "string"
+          },
+          "worker_id": {
+            "type": "string"
+          },
+          "board_id": {
+            "type": "string"
+          },
+          "source_sha256": {
+            "type": "string"
+          },
+          "compilation_status": {
+            "type": "string"
+          },
+          "evaluation_status": {
+            "type": "string"
+          },
+          "correct": {
+            "type": "boolean"
+          },
+          "median_ms": {
+            "type": "number"
+          },
+          "reference_median_ms": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "submitted_at",
+          "backend",
+          "kind",
+          "state",
+          "op",
+          "shape",
+          "dtype",
+          "worker_id",
+          "board_id",
+          "source_sha256",
+          "compilation_status",
+          "evaluation_status"
+        ],
+        "additionalProperties": false
+      },
+      "ResultsPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResultEntry"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "generated_at": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit",
+          "generated_at"
+        ],
+        "additionalProperties": false
+      },
+      "LeaderboardQuery": {
+        "type": "object",
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/BackendId"
+          },
+          "op": {
+            "type": "string",
+            "maxLength": 48
+          },
+          "group_id": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "RankedResult": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/ResultEntry"
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "speedup": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "job",
+          "rank"
+        ],
+        "additionalProperties": false
+      },
+      "RankingGroup": {
+        "type": "object",
+        "properties": {
+          "implementation": {
+            "$ref": "#/components/schemas/KernelImplementation"
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "board_id": {
+            "type": "string"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/BackendId"
+          },
+          "op": {
+            "type": "string"
+          },
+          "shape": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "dtype": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "warmup": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "repetitions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "environment_sha256": {
+            "type": "string"
+          },
+          "clock": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankedResult"
+            }
+          }
+        },
+        "required": [
+          "group_id",
+          "board_id",
+          "backend",
+          "op",
+          "shape",
+          "dtype",
+          "seed",
+          "warmup",
+          "repetitions",
+          "environment_sha256",
+          "clock",
+          "entries"
+        ],
+        "additionalProperties": false
+      },
+      "LeaderboardPage": {
+        "type": "object",
+        "properties": {
+          "generated_at": {
+            "type": "number"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankingGroup"
+            }
+          },
+          "excluded": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "policy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "generated_at",
+          "groups",
+          "excluded",
+          "policy"
+        ],
+        "additionalProperties": false
+      },
+      "CollectionTarget": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "job": {
+            "type": "string"
+          },
+          "board_id": {
+            "type": "string"
+          },
+          "worker_id": {
+            "type": "string"
+          },
+          "up": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "last_scrape_at": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "url",
+          "job",
+          "up",
+          "error"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

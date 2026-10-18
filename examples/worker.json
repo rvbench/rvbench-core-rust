@@ -1,0 +1,1 @@
+{"worker_id":"example","board_id":"example-k3","instance_id":"00000000-0000-4000-8000-000000000000","backend":"k3","kinds":["func","correctness"],"delivery":"hybrid","url":"http://127.0.0.1:18801","capacity":1,"direct_active":0,"ready":true,"environment":{"ops":["add"],"dtypes":["float32"]},"protocol_version":"1.0.0"}

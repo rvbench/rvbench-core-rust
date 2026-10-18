@@ -1,0 +1,14 @@
+[generator]
+spec_path = "openapi.json"
+output_dir = "generated"
+module_name = "rvbench_protocol"
+[generator.types]
+date = "string"
+date_time = "string"
+uuid = "string"
+[features]
+enable_async_client = false
+[server]
+framework = "axum"
+prune_models = false
+operations = []
