@@ -201,6 +201,7 @@ pub struct WorkerRegistrationEnvironment {
     #[serde(flatten)]
     pub additional_properties: std::collections::BTreeMap<String, serde_json::Value>,
 }
+///Per-registration delivery channel. A worker is always capable of both channels, but each registration must declare exactly one: push means the manager posts assignments to the worker url, pull means the worker polls the claim endpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
 pub enum DeliveryMode {
     #[default]
@@ -208,15 +209,12 @@ pub enum DeliveryMode {
     Push,
     #[serde(rename = "pull")]
     Pull,
-    #[serde(rename = "hybrid")]
-    Hybrid,
 }
 impl DeliveryMode {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Push => "push",
             Self::Pull => "pull",
-            Self::Hybrid => "hybrid",
         }
     }
 }
