@@ -8,11 +8,290 @@
 #![allow(clippy::let_unit_value)]
 #![allow(unreachable_patterns)]
 use serde::{Deserialize, Serialize};
+/// Serde normally maps both a missing `Option<T>` field and an
+/// explicit JSON null to `None`. Wrapping the decoded value in
+/// `Some` retains the field-presence bit for `Option<Option<T>>`.
+mod tri_state_serde {
+    use serde::{Deserialize, Deserializer};
+    pub fn deserialize<'de, D, T>(de: D) -> Result<Option<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        T::deserialize(de).map(Some)
+    }
+}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct WorkerSubmission {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assignment: Option<Assignment>,
     pub request: JobRequest,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WorkerCreated {
+    pub token: WorkerToken,
+    pub worker: WorkerRecord,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WorkerToken {
+    pub created_at: String,
+    ///只在此响应出现一次
+    ///Constraint: pattern=`^rvbw_[A-Za-z0-9_-]{40,}$`
+    pub token: String,
+    ///Constraint: pattern=`^rvbw_[A-Za-z0-9_-]{4}$`
+    pub token_prefix: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WorkerRecord {
+    pub created_at: String,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub last_seen: Option<Option<String>>,
+    ///由 last_seen 推导，非持久字段
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub online: Option<bool>,
+    pub owner: OwnerRef,
+    ///pending=已创建未注册；active=有心跳；revoked=token 已撤销
+    pub status: WorkerRecordStatus,
+    ///Constraint: pattern=`^rvbw_[A-Za-z0-9_-]{4}$`
+    pub token_prefix: String,
+    pub visibility: WorkerVisibility,
+    ///Constraint: pattern=`^[A-Za-z0-9_-]{1,64}$`
+    pub worker_id: String,
+}
+///pending=已创建未注册；active=有心跳；revoked=token 已撤销
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum WorkerRecordStatus {
+    #[default]
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "active")]
+    Active,
+    #[serde(rename = "revoked")]
+    Revoked,
+}
+impl WorkerRecordStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Active => "active",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+impl ::std::fmt::Display for WorkerRecordStatus {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for WorkerRecordStatus {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OwnerRef {
+    pub login: String,
+    ///Constraint: pattern=`^(github:[0-9]+|org:[a-z0-9_-]{1,32})$`
+    pub sub: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WorkerClaimRequest {
+    pub backend: WorkerClaimRequestBackend,
+    ///Constraint: minLength=1, maxLength=64
+    pub board_id: String,
+    ///与 WorkerRegistration.environment 同形，供确认页展示
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<WorkerClaimRequestEnvironment>,
+    ///Constraint: minItems=1, uniqueItems=true
+    pub kinds: Vec<WorkerClaimRequestKindsItem>,
+    ///Constraint: pattern=`^[A-Za-z0-9_-]{1,64}$`
+    pub worker_id: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum WorkerClaimRequestKindsItem {
+    #[default]
+    #[serde(rename = "func")]
+    Func,
+    #[serde(rename = "correctness")]
+    Correctness,
+    #[serde(rename = "performance")]
+    Performance,
+}
+impl WorkerClaimRequestKindsItem {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Func => "func",
+            Self::Correctness => "correctness",
+            Self::Performance => "performance",
+        }
+    }
+}
+impl ::std::fmt::Display for WorkerClaimRequestKindsItem {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for WorkerClaimRequestKindsItem {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+///与 WorkerRegistration.environment 同形，供确认页展示
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct WorkerClaimRequestEnvironment {
+    /// Additional properties not explicitly defined in the schema
+    #[serde(flatten)]
+    pub additional_properties: std::collections::BTreeMap<String, serde_json::Value>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum WorkerClaimRequestBackend {
+    #[default]
+    #[serde(rename = "k1")]
+    K1,
+    #[serde(rename = "k3")]
+    K3,
+}
+impl WorkerClaimRequestBackend {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::K1 => "k1",
+            Self::K3 => "k3",
+        }
+    }
+}
+impl ::std::fmt::Display for WorkerClaimRequestBackend {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for WorkerClaimRequestBackend {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WorkerClaimPoll {
+    pub status: WorkerClaimPollStatus,
+    ///仅 status=approved 时存在，且只出现一次
+    ///Constraint: pattern=`^rvbw_[A-Za-z0-9_-]{40,}$`
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub token: Option<Option<String>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub worker_id: Option<Option<String>>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum WorkerClaimPollStatus {
+    #[default]
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "approved")]
+    Approved,
+    #[serde(rename = "denied")]
+    Denied,
+    #[serde(rename = "expired")]
+    Expired,
+}
+impl WorkerClaimPollStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Approved => "approved",
+            Self::Denied => "denied",
+            Self::Expired => "expired",
+        }
+    }
+}
+impl ::std::fmt::Display for WorkerClaimPollStatus {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for WorkerClaimPollStatus {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WorkerClaimChallenge {
+    pub code: ClaimCode,
+    ///Constraint: pattern=`^[A-Za-z0-9_-]{40,64}$`
+    pub device_code: String,
+    ///Constraint: minimum=1
+    #[serde(default)]
+    pub expires_in: i64,
+    ///Constraint: minimum=1
+    #[serde(default)]
+    pub interval: i64,
+    pub verification_url: url::Url,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TokenExchangeResponse {
+    pub expires_at: String,
+    pub principal: Principal,
+    ///只在此响应中出现一次
+    ///Constraint: pattern=`^rvb_[A-Za-z0-9_-]{40,}$`
+    pub token: String,
+    pub token_type: serde_json::Value,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SessionView {
+    pub created_at: String,
+    pub expires_at: String,
+    ///Constraint: pattern=`^[a-f0-9]{16}$`
+    pub id: String,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub ip: Option<Option<String>>,
+    pub kind: SessionViewKind,
+    pub last_seen: String,
+    pub revoked: bool,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub user_agent: Option<Option<String>>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum SessionViewKind {
+    #[default]
+    #[serde(rename = "web")]
+    Web,
+    #[serde(rename = "cli")]
+    Cli,
+}
+impl SessionViewKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Web => "web",
+            Self::Cli => "cli",
+        }
+    }
+}
+impl ::std::fmt::Display for SessionViewKind {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for SessionViewKind {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResultsPage {
@@ -614,6 +893,217 @@ pub struct DiscoveryTargetLabels {
     pub additional_properties: std::collections::BTreeMap<String, String>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CurrentUser {
+    ///Constraint: uniqueItems=true
+    pub permissions: Vec<Permission>,
+    pub principal: Principal,
+    ///provider 校验失败，roles 为降级结果（通常只剩 user）
+    pub roles_stale: bool,
+    pub session: CurrentUserSession,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CurrentUserSession {
+    pub expires_at: String,
+    pub kind: CurrentUserSessionKind,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Principal {
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub avatar_url: Option<Option<url::Url>>,
+    pub login: String,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub name: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<PrincipalProvider>,
+    ///Constraint: uniqueItems=true
+    pub roles: Vec<Role>,
+    /**稳定的 provider 主体标识；login 改名不影响。
+worker:<worker_id> 表示机器主体（provider=worker），与用户角色互斥。
+*/
+    ///Constraint: pattern=`^(github:[0-9]+|worker:[A-Za-z0-9_-]{1,64})$`
+    pub sub: String,
+}
+///worker 是机器主体，与用户角色互斥
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum Role {
+    #[default]
+    #[serde(rename = "anonymous")]
+    Anonymous,
+    #[serde(rename = "user")]
+    User,
+    #[serde(rename = "early_access")]
+    EarlyAccess,
+    #[serde(rename = "admin")]
+    Admin,
+    #[serde(rename = "worker")]
+    Worker,
+}
+impl Role {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Anonymous => "anonymous",
+            Self::User => "user",
+            Self::EarlyAccess => "early_access",
+            Self::Admin => "admin",
+            Self::Worker => "worker",
+        }
+    }
+}
+impl ::std::fmt::Display for Role {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for Role {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum PrincipalProvider {
+    #[default]
+    #[serde(rename = "github")]
+    Github,
+    #[serde(rename = "oidc")]
+    Oidc,
+    #[serde(rename = "static")]
+    Static_,
+    #[serde(rename = "worker")]
+    Worker,
+}
+impl PrincipalProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Github => "github",
+            Self::Oidc => "oidc",
+            Self::Static_ => "static",
+            Self::Worker => "worker",
+        }
+    }
+}
+impl ::std::fmt::Display for PrincipalProvider {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for PrincipalProvider {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum Permission {
+    #[default]
+    #[serde(rename = "public:read")]
+    PublicRead,
+    #[serde(rename = "metrics:read")]
+    MetricsRead,
+    #[serde(rename = "job:submit")]
+    JobSubmit,
+    #[serde(rename = "job:read:self")]
+    JobReadSelf,
+    #[serde(rename = "job:read:all")]
+    JobReadAll,
+    #[serde(rename = "job:cancel:self")]
+    JobCancelSelf,
+    #[serde(rename = "suite:publish")]
+    SuitePublish,
+    #[serde(rename = "suite:run")]
+    SuiteRun,
+    #[serde(rename = "suite:read:self")]
+    SuiteReadSelf,
+    #[serde(rename = "suite:read:all")]
+    SuiteReadAll,
+    #[serde(rename = "worker:create:self")]
+    WorkerCreateSelf,
+    #[serde(rename = "worker:create:public")]
+    WorkerCreatePublic,
+    #[serde(rename = "worker:register")]
+    WorkerRegister,
+    #[serde(rename = "worker:execute")]
+    WorkerExecute,
+    #[serde(rename = "worker:manage:self")]
+    WorkerManageSelf,
+    #[serde(rename = "worker:manage:all")]
+    WorkerManageAll,
+    #[serde(rename = "session:revoke")]
+    SessionRevoke,
+}
+impl Permission {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::PublicRead => "public:read",
+            Self::MetricsRead => "metrics:read",
+            Self::JobSubmit => "job:submit",
+            Self::JobReadSelf => "job:read:self",
+            Self::JobReadAll => "job:read:all",
+            Self::JobCancelSelf => "job:cancel:self",
+            Self::SuitePublish => "suite:publish",
+            Self::SuiteRun => "suite:run",
+            Self::SuiteReadSelf => "suite:read:self",
+            Self::SuiteReadAll => "suite:read:all",
+            Self::WorkerCreateSelf => "worker:create:self",
+            Self::WorkerCreatePublic => "worker:create:public",
+            Self::WorkerRegister => "worker:register",
+            Self::WorkerExecute => "worker:execute",
+            Self::WorkerManageSelf => "worker:manage:self",
+            Self::WorkerManageAll => "worker:manage:all",
+            Self::SessionRevoke => "session:revoke",
+        }
+    }
+}
+impl ::std::fmt::Display for Permission {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for Permission {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum CurrentUserSessionKind {
+    #[default]
+    #[serde(rename = "web")]
+    Web,
+    #[serde(rename = "cli")]
+    Cli,
+}
+impl CurrentUserSessionKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Web => "web",
+            Self::Cli => "cli",
+        }
+    }
+}
+impl ::std::fmt::Display for CurrentUserSessionKind {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for CurrentUserSessionKind {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreateWorkerRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<WorkerVisibility>,
+    ///Constraint: pattern=`^[A-Za-z0-9_-]{1,64}$`
+    pub worker_id: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CountEntry {
     ///Constraint: minimum=0
     pub count: i64,
@@ -738,6 +1228,339 @@ impl ::std::fmt::Display for CollectionHealthStatus {
     }
 }
 impl AsRef<str> for CollectionHealthStatus {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ClaimView {
+    pub backend: ClaimViewBackend,
+    pub board_id: String,
+    pub code: ClaimCode,
+    pub expires_at: String,
+    pub kinds: Vec<ClaimViewKindsItem>,
+    pub requested_at: String,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub source_ip: Option<Option<String>>,
+    pub status: ClaimViewStatus,
+    pub worker_id: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum ClaimViewStatus {
+    #[default]
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "approved")]
+    Approved,
+    #[serde(rename = "denied")]
+    Denied,
+    #[serde(rename = "expired")]
+    Expired,
+}
+impl ClaimViewStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Approved => "approved",
+            Self::Denied => "denied",
+            Self::Expired => "expired",
+        }
+    }
+}
+impl ::std::fmt::Display for ClaimViewStatus {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for ClaimViewStatus {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum ClaimViewKindsItem {
+    #[default]
+    #[serde(rename = "func")]
+    Func,
+    #[serde(rename = "correctness")]
+    Correctness,
+    #[serde(rename = "performance")]
+    Performance,
+}
+impl ClaimViewKindsItem {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Func => "func",
+            Self::Correctness => "correctness",
+            Self::Performance => "performance",
+        }
+    }
+}
+impl ::std::fmt::Display for ClaimViewKindsItem {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for ClaimViewKindsItem {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum ClaimViewBackend {
+    #[default]
+    #[serde(rename = "k1")]
+    K1,
+    #[serde(rename = "k3")]
+    K3,
+}
+impl ClaimViewBackend {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::K1 => "k1",
+            Self::K3 => "k3",
+        }
+    }
+}
+impl ::std::fmt::Display for ClaimViewBackend {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for ClaimViewBackend {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+///8 字符短码，去掉 0/O/1/I 以免口述歧义
+pub type ClaimCode = String;
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthError {
+    pub error: AuthErrorError,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthErrorError {
+    pub code: AuthErrorErrorCode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<AuthErrorErrorDetails>,
+    pub message: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct AuthErrorErrorDetails {
+    /// Additional properties not explicitly defined in the schema
+    #[serde(flatten)]
+    pub additional_properties: std::collections::BTreeMap<String, serde_json::Value>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum AuthErrorErrorCode {
+    #[default]
+    #[serde(rename = "unauthenticated")]
+    Unauthenticated,
+    #[serde(rename = "forbidden")]
+    Forbidden,
+    #[serde(rename = "auth_disabled")]
+    AuthDisabled,
+    #[serde(rename = "provider_unavailable")]
+    ProviderUnavailable,
+    #[serde(rename = "state_invalid")]
+    StateInvalid,
+    #[serde(rename = "grant_invalid")]
+    GrantInvalid,
+    #[serde(rename = "redirect_not_allowed")]
+    RedirectNotAllowed,
+    #[serde(rename = "rate_limited")]
+    RateLimited,
+}
+impl AuthErrorErrorCode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Unauthenticated => "unauthenticated",
+            Self::Forbidden => "forbidden",
+            Self::AuthDisabled => "auth_disabled",
+            Self::ProviderUnavailable => "provider_unavailable",
+            Self::StateInvalid => "state_invalid",
+            Self::GrantInvalid => "grant_invalid",
+            Self::RedirectNotAllowed => "redirect_not_allowed",
+            Self::RateLimited => "rate_limited",
+        }
+    }
+}
+impl ::std::fmt::Display for AuthErrorErrorCode {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for AuthErrorErrorCode {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuthConfigView {
+    ///如 GitHub
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    ///auth.mode != off
+    pub enabled: bool,
+    ///前端跳转地址；enabled=false 时为 null
+    pub login_url: Option<String>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub logout_url: Option<Option<String>>,
+    pub provider: Option<AuthConfigViewProvider>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum AuthConfigViewProvider {
+    #[default]
+    #[serde(rename = "github")]
+    Github,
+    #[serde(rename = "oidc")]
+    Oidc,
+    #[serde(rename = "static")]
+    Static_,
+    #[serde(rename = "null")]
+    NullValue,
+}
+impl AuthConfigViewProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Github => "github",
+            Self::Oidc => "oidc",
+            Self::Static_ => "static",
+            Self::NullValue => "null",
+        }
+    }
+}
+impl ::std::fmt::Display for AuthConfigViewProvider {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for AuthConfigViewProvider {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AuditEntry {
+    pub action: AuditAction,
+    pub at: String,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub detail: Option<Option<String>>,
+    ///Constraint: minimum=1
+    pub id: i64,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub ip: Option<Option<String>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub login: Option<Option<String>>,
+    pub result: AuditEntryResult,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub sub: Option<Option<String>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "tri_state_serde::deserialize"
+    )]
+    pub target: Option<Option<String>>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum AuditEntryResult {
+    #[default]
+    #[serde(rename = "ok")]
+    Ok,
+    #[serde(rename = "denied")]
+    Denied,
+    #[serde(rename = "error")]
+    Error,
+}
+impl AuditEntryResult {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Denied => "denied",
+            Self::Error => "error",
+        }
+    }
+}
+impl ::std::fmt::Display for AuditEntryResult {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for AuditEntryResult {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum AuditAction {
+    #[default]
+    #[serde(rename = "login")]
+    Login,
+    #[serde(rename = "login_failed")]
+    LoginFailed,
+    #[serde(rename = "logout")]
+    Logout,
+    #[serde(rename = "job.submit")]
+    JobSubmit,
+    #[serde(rename = "job.cancel")]
+    JobCancel,
+    #[serde(rename = "suite.publish")]
+    SuitePublish,
+    #[serde(rename = "suite.run")]
+    SuiteRun,
+    #[serde(rename = "suite.cancel")]
+    SuiteCancel,
+    #[serde(rename = "session.revoke")]
+    SessionRevoke,
+    #[serde(rename = "worker.drain")]
+    WorkerDrain,
+}
+impl AuditAction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Login => "login",
+            Self::LoginFailed => "login_failed",
+            Self::Logout => "logout",
+            Self::JobSubmit => "job.submit",
+            Self::JobCancel => "job.cancel",
+            Self::SuitePublish => "suite.publish",
+            Self::SuiteRun => "suite.run",
+            Self::SuiteCancel => "suite.cancel",
+            Self::SessionRevoke => "session.revoke",
+            Self::WorkerDrain => "worker.drain",
+        }
+    }
+}
+impl ::std::fmt::Display for AuditAction {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for AuditAction {
     fn as_ref(&self) -> &str {
         self.as_str()
     }
@@ -902,6 +1725,38 @@ impl AsRef<str> for BackendId {
         self.as_str()
     }
 }
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ApproveClaimRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<WorkerVisibility>,
+}
+///private 只服务 owner 的 job；public 服务所有 job
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum WorkerVisibility {
+    #[default]
+    #[serde(rename = "private")]
+    Private,
+    #[serde(rename = "public")]
+    Public,
+}
+impl WorkerVisibility {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Private => "private",
+            Self::Public => "public",
+        }
+    }
+}
+impl ::std::fmt::Display for WorkerVisibility {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for WorkerVisibility {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Ack {
     pub instance_id: String,
@@ -949,4 +1804,10 @@ impl AsRef<str> for EvaluatorKind {
     fn as_ref(&self) -> &str {
         self.as_str()
     }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TokenExchangeRequest {
+    ///GitHub OAuth access token（device flow 产物）；static provider 下为 login
+    ///Constraint: minLength=1, maxLength=512
+    pub access_token: String,
 }
