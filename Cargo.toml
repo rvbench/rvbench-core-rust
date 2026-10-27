@@ -2,6 +2,7 @@
 name = "rvbench-protocol"
 version = "0.1.0"
 edition = "2024"
+exclude = ["webui/design/**"]
 
 [dependencies]
 anyhow = "1"
