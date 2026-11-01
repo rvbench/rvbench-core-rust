@@ -436,6 +436,9 @@ pub struct WorkerRegistration {
     pub board_id: String,
     ///Constraint: minimum=1, maximum=64
     pub capacity: i64,
+    ///Constraint: maxItems=8
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contexts: Option<Vec<ExecutionContext>>,
     pub delivery: DeliveryMode,
     ///Constraint: minimum=0, maximum=64
     pub direct_active: i64,
@@ -447,6 +450,12 @@ pub struct WorkerRegistration {
     pub observability: Option<ObservabilityRegistration>,
     pub protocol_version: WorkerRegistrationProtocolVersion,
     pub ready: bool,
+    ///Constraint: maxItems=16
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtimes: Option<Vec<RuntimeDecl>>,
+    ///Constraint: maxItems=64
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slots: Option<Vec<SlotDecl>>,
     pub url: String,
     ///Constraint: pattern=`^[A-Za-z0-9_-]{1,64}$`
     pub worker_id: String,
@@ -479,6 +488,211 @@ pub struct WorkerRegistrationEnvironment {
     /// Additional properties not explicitly defined in the schema
     #[serde(flatten)]
     pub additional_properties: std::collections::BTreeMap<String, serde_json::Value>,
+}
+///槽位 = (worker, context, runtime)，是容量与调度的最小单位。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SlotDecl {
+    ///Constraint: minimum=1, maximum=64
+    pub capacity: i64,
+    ///Constraint: pattern=`^[a-z][a-z0-9_-]{0,31}$`
+    pub context: String,
+    pub runtime: RuntimeName,
+}
+///worker 部署的一个软件栈。能力由 probe 产出，不是自报；ready=false 的声明保留在目录里用于报错。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RuntimeDecl {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<bool>,
+    ///Constraint: uniqueItems=true
+    pub dtypes: Vec<RuntimeDeclDtypesItem>,
+    pub entry: RuntimeDeclEntry,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<RuntimeDeclEvidence>,
+    pub id: RuntimeName,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub isolation: Option<RuntimeIsolation>,
+    ///Constraint: uniqueItems=true
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kinds: Option<Vec<JobKind>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limits: Option<RuntimeDeclLimits>,
+    ///Constraint: uniqueItems=true
+    pub ops: Vec<String>,
+    pub ready: bool,
+    ///Constraint: minItems=1, uniqueItems=true
+    pub source_kinds: Vec<SourceKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timing_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub toolchain: Option<RuntimeDeclToolchain>,
+    ///Constraint: pattern=`^[0-9]+\.[0-9]+\.[0-9]+$`
+    pub version: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct RuntimeDeclToolchain {
+    /// Additional properties matching the spec's
+    /// `additionalProperties` value schema.
+    #[serde(flatten)]
+    pub additional_properties: std::collections::BTreeMap<String, String>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RuntimeDeclLimits {
+    ///Constraint: minimum=1
+    pub max_source_bytes: i64,
+}
+///Runtime provider 的稳定标识，不带版本。例：spacemit-ep / spacemit-triton / ruyiai-sdk。
+pub type RuntimeName = String;
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RuntimeIsolation {
+    pub cache: RuntimeIsolationCache,
+    pub mode: RuntimeIsolationMode,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum RuntimeIsolationMode {
+    #[default]
+    #[serde(rename = "in_process")]
+    InProcess,
+    #[serde(rename = "subprocess")]
+    Subprocess,
+    #[serde(rename = "venv")]
+    Venv,
+    #[serde(rename = "container")]
+    Container,
+}
+impl RuntimeIsolationMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::InProcess => "in_process",
+            Self::Subprocess => "subprocess",
+            Self::Venv => "venv",
+            Self::Container => "container",
+        }
+    }
+}
+impl ::std::fmt::Display for RuntimeIsolationMode {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for RuntimeIsolationMode {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum RuntimeIsolationCache {
+    #[default]
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "per_job")]
+    PerJob,
+    #[serde(rename = "per_runtime")]
+    PerRuntime,
+}
+impl RuntimeIsolationCache {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::PerJob => "per_job",
+            Self::PerRuntime => "per_runtime",
+        }
+    }
+}
+impl ::std::fmt::Display for RuntimeIsolationCache {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for RuntimeIsolationCache {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RuntimeDeclEvidence {
+    pub at: String,
+    ///Constraint: pattern=`^[a-f0-9]{64}$`
+    pub probe_sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_ops: Option<Vec<RuntimeOpSupport>>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RuntimeOpSupport {
+    ///Constraint: minItems=1, uniqueItems=true
+    pub dtypes: Vec<RuntimeOpSupportDtypesItem>,
+    ///Constraint: pattern=`^[a-z][a-z0-9_]{0,47}$`
+    pub op: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum RuntimeOpSupportDtypesItem {
+    #[default]
+    #[serde(rename = "float32")]
+    Float32,
+    #[serde(rename = "float16")]
+    Float16,
+}
+impl RuntimeOpSupportDtypesItem {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Float32 => "float32",
+            Self::Float16 => "float16",
+        }
+    }
+}
+impl ::std::fmt::Display for RuntimeOpSupportDtypesItem {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for RuntimeOpSupportDtypesItem {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RuntimeDeclEntry {
+    pub abi: String,
+    pub symbol: String,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum RuntimeDeclDtypesItem {
+    #[default]
+    #[serde(rename = "float32")]
+    Float32,
+    #[serde(rename = "float16")]
+    Float16,
+}
+impl RuntimeDeclDtypesItem {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Float32 => "float32",
+            Self::Float16 => "float16",
+        }
+    }
+}
+impl ::std::fmt::Display for RuntimeDeclDtypesItem {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for RuntimeDeclDtypesItem {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+///worker 上的一组执行上下文（核簇 / 亲和 / AI thread）。context 不参与请求，由 worker 在准入后本地选定。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ExecutionContext {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_thread: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpus: Option<String>,
+    ///Constraint: pattern=`^[a-z][a-z0-9_-]{0,31}$`
+    pub id: String,
 }
 ///Per-registration delivery channel. A worker is always capable of both channels, but each registration must declare exactly one: push means the manager posts assignments to the worker url, pull means the worker polls the claim endpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
@@ -720,6 +934,9 @@ pub struct LeaderboardPage {
     ///Constraint: minimum=0
     pub excluded: i64,
     pub generated_at: f64,
+    ///分组维度；缺省为 backend，保持旧榜单口径。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_by: Option<LeaderboardPageGroupBy>,
     pub groups: Vec<RankingGroup>,
     pub policy: String,
 }
@@ -737,6 +954,8 @@ pub struct RankingGroup {
     pub op: String,
     ///Constraint: minimum=0
     pub repetitions: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<RuntimeStamp>,
     ///Constraint: minimum=0
     pub seed: i64,
     pub shape: Vec<i64>,
@@ -771,11 +990,46 @@ pub struct ResultEntry {
     pub op: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_median_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<RuntimeStamp>,
     pub shape: Vec<i64>,
     pub source_sha256: String,
     pub state: JobState,
     pub submitted_at: String,
     pub worker_id: String,
+}
+///结果上携带的 runtime 归属。version 为 null 表示该值由请求推导、未经观测确认。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RuntimeStamp {
+    pub id: String,
+    pub version: Option<String>,
+}
+///分组维度；缺省为 backend，保持旧榜单口径。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum LeaderboardPageGroupBy {
+    #[default]
+    #[serde(rename = "backend")]
+    Backend,
+    #[serde(rename = "runtime")]
+    Runtime,
+}
+impl LeaderboardPageGroupBy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Backend => "backend",
+            Self::Runtime => "runtime",
+        }
+    }
+}
+impl ::std::fmt::Display for LeaderboardPageGroupBy {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for LeaderboardPageGroupBy {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct JobEvent {
@@ -1587,10 +1841,18 @@ pub struct JobRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attributes: Option<JobRequestAttributes>,
     pub backend: BackendId,
+    ///判据引用的 case id。
+    ///Constraint: minLength=1, maxLength=96
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub case: Option<String>,
     ///Constraint: minLength=1, maxLength=64
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_request_id: Option<String>,
     pub dtype: JobRequestDtype,
+    ///候选源码的入口符号，缺省 candidate。
+    ///Constraint: pattern=`^[A-Za-z_][A-Za-z0-9_]{0,63}$`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub implementation: Option<KernelImplementation>,
     pub kind: JobKind,
@@ -1598,6 +1860,8 @@ pub struct JobRequest {
     pub op: String,
     ///Constraint: minimum=1, maximum=1000
     pub repetitions: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<RuntimeRef>,
     ///Constraint: minimum=0, maximum=2147483647
     pub seed: i64,
     ///Constraint: minItems=1, maxItems=6
@@ -1605,12 +1869,53 @@ pub struct JobRequest {
     ///Constraint: maxLength=1048576
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_kind: Option<SourceKind>,
+    ///判据引用的 suite id。
+    ///Constraint: minLength=1, maxLength=64
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suite: Option<String>,
     ///Constraint: minimum=1, maximum=1800
     pub timeout_secs: i64,
     ///Constraint: minimum=0, maximum=1000
     pub warmup: i64,
 }
-///Operator implementation, independent of hardware backend. Omission preserves legacy defaults: k1=native-c, k3=triton.
+///候选源码的方言。与 runtime 是 N:M 关系：一份 triton 源码可投给多个 runtime。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum SourceKind {
+    #[default]
+    #[serde(rename = "c")]
+    C,
+    #[serde(rename = "python")]
+    Python,
+    #[serde(rename = "triton")]
+    Triton,
+    #[serde(rename = "mlir")]
+    Mlir,
+}
+impl SourceKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::C => "c",
+            Self::Python => "python",
+            Self::Triton => "triton",
+            Self::Mlir => "mlir",
+        }
+    }
+}
+impl ::std::fmt::Display for SourceKind {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for SourceKind {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+///请求侧的 runtime 选择，可钉 major.minor[.patch]。省略版本表示取槽位声明的默认版本。
+pub type RuntimeRef = String;
+///已废弃：改用 JobRequest.runtime。保留一年用于双向映射，k1 的 native-c 映射 spacemit-ep，k3 的 triton 映射 spacemit-triton。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
 pub enum KernelImplementation {
     #[default]
@@ -1801,6 +2106,63 @@ impl ::std::fmt::Display for EvaluatorKind {
     }
 }
 impl AsRef<str> for EvaluatorKind {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+///准入拒绝原因。前七类在提交时即可给出，不消耗租约。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum RejectReason {
+    #[default]
+    #[serde(rename = "BACKEND_MISMATCH")]
+    BackendMismatch,
+    #[serde(rename = "KIND_UNSUPPORTED")]
+    KindUnsupported,
+    #[serde(rename = "RUNTIME_NOT_INSTALLED")]
+    RuntimeNotInstalled,
+    #[serde(rename = "RUNTIME_NOT_READY")]
+    RuntimeNotReady,
+    #[serde(rename = "SOURCE_KIND_UNSUPPORTED")]
+    SourceKindUnsupported,
+    #[serde(rename = "OP_UNSUPPORTED")]
+    OpUnsupported,
+    #[serde(rename = "DTYPE_UNSUPPORTED")]
+    DtypeUnsupported,
+    #[serde(rename = "VERSION_PINNED_MISSING")]
+    VersionPinnedMissing,
+    #[serde(rename = "ABI_MISMATCH")]
+    AbiMismatch,
+    #[serde(rename = "TOOLCHAIN_FAILED")]
+    ToolchainFailed,
+    #[serde(rename = "TIMEOUT")]
+    Timeout,
+    #[serde(rename = "CONTEXT_BUSY")]
+    ContextBusy,
+}
+impl RejectReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::BackendMismatch => "BACKEND_MISMATCH",
+            Self::KindUnsupported => "KIND_UNSUPPORTED",
+            Self::RuntimeNotInstalled => "RUNTIME_NOT_INSTALLED",
+            Self::RuntimeNotReady => "RUNTIME_NOT_READY",
+            Self::SourceKindUnsupported => "SOURCE_KIND_UNSUPPORTED",
+            Self::OpUnsupported => "OP_UNSUPPORTED",
+            Self::DtypeUnsupported => "DTYPE_UNSUPPORTED",
+            Self::VersionPinnedMissing => "VERSION_PINNED_MISSING",
+            Self::AbiMismatch => "ABI_MISMATCH",
+            Self::ToolchainFailed => "TOOLCHAIN_FAILED",
+            Self::Timeout => "TIMEOUT",
+            Self::ContextBusy => "CONTEXT_BUSY",
+        }
+    }
+}
+impl ::std::fmt::Display for RejectReason {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for RejectReason {
     fn as_ref(&self) -> &str {
         self.as_str()
     }
