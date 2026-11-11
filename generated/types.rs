@@ -925,9 +925,45 @@ pub struct LeaderboardQuery {
     ///Constraint: maxLength=64
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group_id: Option<String>,
+    ///排序口径；缺省 latency 保持历史行为。ipc 降序，stall_ratio/l1d_miss_rate 升序，缺失或 unstable 的条目不参与排名。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metric: Option<LeaderboardQueryMetric>,
     ///Constraint: maxLength=48
     #[serde(skip_serializing_if = "Option::is_none")]
     pub op: Option<String>,
+}
+///排序口径；缺省 latency 保持历史行为。ipc 降序，stall_ratio/l1d_miss_rate 升序，缺失或 unstable 的条目不参与排名。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum LeaderboardQueryMetric {
+    #[default]
+    #[serde(rename = "latency")]
+    Latency,
+    #[serde(rename = "ipc")]
+    Ipc,
+    #[serde(rename = "stall_ratio")]
+    StallRatio,
+    #[serde(rename = "l1d_miss_rate")]
+    L1dMissRate,
+}
+impl LeaderboardQueryMetric {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Latency => "latency",
+            Self::Ipc => "ipc",
+            Self::StallRatio => "stall_ratio",
+            Self::L1dMissRate => "l1d_miss_rate",
+        }
+    }
+}
+impl ::std::fmt::Display for LeaderboardQueryMetric {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for LeaderboardQueryMetric {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LeaderboardPage {
@@ -1081,10 +1117,13 @@ pub struct JobRecordPhaseTimingsSeconds {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queue_wait: Option<f64>,
 }
+///一个阶段的证据与细节。details 是自由字段（保留给老 worker 的过渡双写）；hardware 是带 schema 的硬件指标快照，缺省为 null 表示未采集。
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PhaseResult {
     pub artifacts: Vec<Artifact>,
     pub details: PhaseResultDetails,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hardware: Option<HardwareMetrics>,
     pub status: PhaseStatus,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
@@ -1134,6 +1173,182 @@ pub struct Artifact {
     ///Constraint: minimum=0, maximum=2147483647
     pub size_bytes: i64,
 }
+///一次 run 的硬件指标快照，由 worker 采集并派生，manager 与前端只读、不得二次推导。supported=false 表示该单元没有可用计数器（value 必须为 null，不允许用 0 冒充不可测）；value=null 且 supported=true 表示该计数器本次采集失败，原因见 reason。perf 的计数范围是整个被测进程，python runtime 含解释器与框架初始化开销，跨 runtime 比较 ipc 没有意义。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HardwareMetrics {
+    ///原始计数，逐事件一条；不可测单元以 supported=false 显式列出，便于前端画灰块。
+    ///Constraint: maxItems=64
+    pub counters: Vec<HwCounter>,
+    pub derived: HwDerived,
+    ///采集时内核版本（/proc/sys/kernel/osrelease）。
+    ///Constraint: maxLength=96
+    pub kernel: Option<String>,
+    ///逐簇派生指标；未采到数的簇不出现在这里。
+    ///Constraint: maxItems=16
+    pub per_cluster: Vec<HwClusterMetrics>,
+    ///perf 二进制版本串；未采到时为 null。
+    ///Constraint: maxLength=96
+    pub perf_version: Option<String>,
+    ///采集所在平台标识，如 spacemit-k3。
+    ///Constraint: maxLength=64
+    pub platform: String,
+    ///整体降级原因（perf 缺失、权限不足、超预算等）；正常时为 null。
+    ///Constraint: maxLength=200
+    pub reason: Option<String>,
+    pub scope: HwScope,
+    pub topology: HwTopology,
+    ///重复采样 CV 超阈值；true 时排行榜应排除该条。
+    pub unstable: bool,
+}
+///采集覆盖的 CPU 拓扑。kind=performance/efficiency 在 K3 上分别是 X100 与 A100 簇。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HwTopology {
+    ///Constraint: maxItems=16
+    pub clusters: Vec<HwTopologyClustersItem>,
+    ///本机逻辑 CPU 数。
+    ///Constraint: minimum=0
+    pub cpus_total: i64,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HwTopologyClustersItem {
+    ///属于该簇的 CPU 编号。
+    pub cpus: Vec<i64>,
+    ///簇标识，如 X100 / A100。
+    ///Constraint: maxLength=32
+    pub id: String,
+    ///簇类型；未知机型填 unknown。
+    pub kind: HwTopologyClustersItemKind,
+    ///本轮是否真的在该簇上采到数；未采集的簇仍列出，便于前端画灰块。
+    pub sampled: bool,
+}
+///簇类型；未知机型填 unknown。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum HwTopologyClustersItemKind {
+    #[default]
+    #[serde(rename = "performance")]
+    Performance,
+    #[serde(rename = "efficiency")]
+    Efficiency,
+    #[serde(rename = "unknown")]
+    Unknown,
+}
+impl HwTopologyClustersItemKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Performance => "performance",
+            Self::Efficiency => "efficiency",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+impl ::std::fmt::Display for HwTopologyClustersItemKind {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for HwTopologyClustersItemKind {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+///采样口径。mode=process 表示 perf 计的是被测进程树，不是整机。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HwScope {
+    ///首个采样簇 id；多簇时逐条计数自带 cluster。
+    ///Constraint: maxLength=32
+    pub cluster: Option<String>,
+    ///各派生指标跨轮 CV 的最大值；samples<2 时为 null。
+    ///Constraint: minimum=0
+    pub cv_max: Option<f64>,
+    ///单次采集的墙钟长度（毫秒）。
+    ///Constraint: minimum=0
+    pub duration_ms: Option<f64>,
+    ///采集范围。
+    pub mode: HwScopeMode,
+    ///实际完成的采样轮数；budget 用尽时小于请求值。
+    ///Constraint: minimum=0, maximum=32
+    pub samples: i64,
+}
+///采集范围。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum HwScopeMode {
+    #[default]
+    #[serde(rename = "process")]
+    Process,
+    #[serde(rename = "cgroup")]
+    Cgroup,
+}
+impl HwScopeMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Process => "process",
+            Self::Cgroup => "cgroup",
+        }
+    }
+}
+impl ::std::fmt::Display for HwScopeMode {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl AsRef<str> for HwScopeMode {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+///单个原始计数。event 为 perf 事件名；selector 只在 raw 事件出现（如 0x15），命名事件留空。多簇采集时同一事件按 cluster 各出一条。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HwCounter {
+    ///该计数取自哪个 CPU 簇；单簇机型为 null。
+    ///Constraint: maxLength=32
+    pub cluster: Option<String>,
+    ///perf 事件名，如 L1-dcache-loads；无计数器时为 null。
+    ///Constraint: maxLength=48
+    pub event: Option<String>,
+    ///稳定的扁平字段名（snake_case），报表与 CLI 用它，不用 event。
+    ///Constraint: maxLength=48
+    pub name: String,
+    ///no_counter_on_k3 / semantics_unverified / not_counted / capture_failed 等机器可读原因。
+    ///Constraint: maxLength=120
+    pub reason: Option<String>,
+    ///raw 事件选择子，如 0x15；命名事件为 null。
+    ///Constraint: maxLength=32
+    pub selector: Option<String>,
+    ///该单元本机是否有可用计数器。false 与 value=0 语义不同。
+    pub supported: bool,
+    ///值的单位（count / ns / 空）。
+    ///Constraint: maxLength=16
+    pub unit: Option<String>,
+    ///计数原值。supported=false 时必须为 null；supported=true 且为 null 表示采集失败。
+    pub value: Option<f64>,
+}
+///单个 CPU 簇的派生指标。derived 是跨簇中位数，这里逐簇读数：热力图按簇填充，不必在前端二次相除。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HwClusterMetrics {
+    ///簇 id，与 topology.clusters[].id 对应。
+    ///Constraint: maxLength=32
+    pub cluster: String,
+    pub derived: HwDerived,
+}
+///派生指标，全部由 worker 计算（口径唯一）。分母为 0 或采样缺失时为 null。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HwDerived {
+    ///branch-misses / branches。
+    ///Constraint: minimum=0, maximum=1
+    pub branch_miss_rate: Option<f64>,
+    ///task-clock / 墙钟 × 100%，热力图的热力轴。
+    ///Constraint: minimum=0, maximum=1
+    pub core_busy: Option<f64>,
+    ///instructions / cycles。
+    ///Constraint: minimum=0, maximum=64
+    pub ipc: Option<f64>,
+    ///L1-dcache-load-misses / L1-dcache-loads。
+    ///Constraint: minimum=0, maximum=1
+    pub l1d_miss_rate: Option<f64>,
+    ///stalled-cycles-frontend / cycles。在 K3 上实测等同未发射周期，不要按 x86 的 frontend 语义解读。
+    ///Constraint: minimum=0, maximum=1
+    pub stall_ratio: Option<f64>,
+}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DiscoveryTarget {
     pub labels: DiscoveryTargetLabels,
@@ -1180,8 +1395,8 @@ pub struct Principal {
     ///Constraint: uniqueItems=true
     pub roles: Vec<Role>,
     /**稳定的 provider 主体标识；login 改名不影响。
-worker:<worker_id> 表示机器主体（provider=worker），与用户角色互斥。
-*/
+    worker:<worker_id> 表示机器主体（provider=worker），与用户角色互斥。
+    */
     ///Constraint: pattern=`^(github:[0-9]+|worker:[A-Za-z0-9_-]{1,64})$`
     pub sub: String,
 }

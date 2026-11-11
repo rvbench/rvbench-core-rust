@@ -1,0 +1,110 @@
+{
+  "platform": "spacemit-k3",
+  "perf_version": "6.18.3.g7d17e358c660",
+  "kernel": "6.18.3-generic",
+  "scope": {
+    "mode": "process",
+    "cluster": "X100",
+    "duration_ms": 42600.0,
+    "samples": 3,
+    "cv_max": 0.021
+  },
+  "topology": {
+    "cpus_total": 16,
+    "clusters": [
+      {
+        "id": "X100",
+        "kind": "performance",
+        "cpus": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "sampled": true
+      },
+      {
+        "id": "A100",
+        "kind": "efficiency",
+        "cpus": [
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "sampled": false
+      }
+    ]
+  },
+  "counters": [
+    {
+      "name": "cycles",
+      "event": "cycles",
+      "selector": null,
+      "cluster": "X100",
+      "value": 400245408.0,
+      "unit": "count",
+      "supported": true,
+      "reason": null
+    },
+    {
+      "name": "stalled_cycles_backend",
+      "event": "stalled-cycles-backend",
+      "selector": null,
+      "cluster": "X100",
+      "value": 40184084.0,
+      "unit": "count",
+      "supported": true,
+      "reason": "semantics_unverified"
+    },
+    {
+      "name": "l2_cache_misses",
+      "event": null,
+      "selector": null,
+      "cluster": null,
+      "value": null,
+      "unit": "count",
+      "supported": false,
+      "reason": "no_counter_on_k3"
+    }
+  ],
+  "derived": {
+    "ipc": 0.7,
+    "l1d_miss_rate": 0.031,
+    "stall_ratio": 0.684,
+    "branch_miss_rate": 0.012,
+    "core_busy": 0.94
+  },
+  "per_cluster": [
+    {
+      "cluster": "X100",
+      "derived": {
+        "ipc": 0.7,
+        "l1d_miss_rate": 0.031,
+        "stall_ratio": 0.684,
+        "branch_miss_rate": 0.012,
+        "core_busy": 0.94
+      }
+    },
+    {
+      "cluster": "A100",
+      "derived": {
+        "ipc": 0.42,
+        "l1d_miss_rate": 0.058,
+        "stall_ratio": 0.771,
+        "branch_miss_rate": 0.019,
+        "core_busy": 0.31
+      }
+    }
+  ],
+  "unstable": false,
+  "reason": null
+}

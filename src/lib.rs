@@ -274,16 +274,19 @@ pub fn runtime_ref(request: &JobRequest) -> String {
 /// A source kind is optional on the wire; it falls back to the legacy
 /// implementation and finally to the runtime's first declared kind.
 pub fn source_kind_of(request: &JobRequest, runtime: Option<&RuntimeDecl>) -> Option<SourceKind> {
-    request.source_kind.clone().or_else(|| {
-        request
-            .implementation
-            .as_ref()
-            .map(|implementation| match implementation {
-                KernelImplementation::NativeC => SourceKind::C,
-                KernelImplementation::Triton => SourceKind::Python,
-            })
-    })
-    .or_else(|| runtime.and_then(|r| r.source_kinds.first().cloned()))
+    request
+        .source_kind
+        .clone()
+        .or_else(|| {
+            request
+                .implementation
+                .as_ref()
+                .map(|implementation| match implementation {
+                    KernelImplementation::NativeC => SourceKind::C,
+                    KernelImplementation::Triton => SourceKind::Python,
+                })
+        })
+        .or_else(|| runtime.and_then(|r| r.source_kinds.first().cloned()))
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Placement {
@@ -413,6 +416,54 @@ mod tests {
         assert!(validate("JobRequest", &unknown).is_err());
         let dto: JobRequest = serde_json::from_value(good.clone()).unwrap();
         assert_eq!(serde_json::to_value(dto).unwrap(), good);
+    }
+    #[test]
+    fn hardware_metrics_keep_explicit_nulls_and_stay_optional_on_phases() {
+        let value: Value = serde_json::from_str(include_str!("../examples/hardware.json")).unwrap();
+        validate("HardwareMetrics", &value).unwrap();
+        let hardware: HardwareMetrics = serde_json::from_value(value.clone()).unwrap();
+        // Required-but-nullable fields round-trip as explicit nulls, so "no counter"
+        // never collapses into a missing key on the wire.
+        assert_eq!(serde_json::to_value(&hardware).unwrap(), value);
+        assert!(
+            hardware
+                .counters
+                .iter()
+                .all(|c| c.supported || c.value.is_none()),
+            "unsupported units must not carry a value"
+        );
+        // A counter without `supported` is not representable: silent defaults would
+        // reopen the "missing counter looks like zero" hole this schema exists for.
+        let mut broken = value.clone();
+        broken["counters"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("supported");
+        assert!(validate("HardwareMetrics", &broken).is_err());
+        // Old workers omit hardware entirely; new ones attach it. Both are valid.
+        let bare = json!({"status":"passed","details":{"correct":true},"artifacts":[]});
+        validate("PhaseResult", &bare).unwrap();
+        let mut stamped = bare.clone();
+        stamped["hardware"] = value;
+        validate("PhaseResult", &stamped).unwrap();
+        let phase: PhaseResult = serde_json::from_value(stamped).unwrap();
+        assert!(phase.hardware.is_some_and(|h| h.derived.ipc == Some(0.7)));
+        assert!(
+            !serde_json::to_value(serde_json::from_value::<PhaseResult>(bare).unwrap())
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .contains_key("hardware"),
+            "an uncollected phase must not invent a null hardware key"
+        );
+    }
+    #[test]
+    fn leaderboard_metric_selects_a_sort_key_and_defaults_to_latency() {
+        let bare: LeaderboardQuery = serde_json::from_value(json!({})).unwrap();
+        assert!(bare.metric.is_none());
+        let ipc: LeaderboardQuery = serde_json::from_value(json!({"metric":"ipc"})).unwrap();
+        assert_eq!(ipc.metric, Some(LeaderboardQueryMetric::Ipc));
+        assert!(validate("LeaderboardQuery", &json!({"metric":"cycles"})).is_err());
     }
     #[test]
     fn canonical_digest_is_order_independent() {
@@ -582,7 +633,10 @@ mod runtime_admission {
         let mut native = request(None, None);
         native.implementation = Some(KernelImplementation::NativeC);
         assert_eq!(runtime_ref(&native), RUNTIME_EP);
-        assert_eq!(split_runtime_ref("spacemit-triton@0.3"), ("spacemit-triton", Some("0.3")));
+        assert_eq!(
+            split_runtime_ref("spacemit-triton@0.3"),
+            ("spacemit-triton", Some("0.3"))
+        );
         assert!(version_matches("0.3.1", Some("0.3")));
         assert!(version_matches("0.3.1", Some("0.3.1")));
         assert!(!version_matches("0.3.1", Some("0.4")));
@@ -591,7 +645,10 @@ mod runtime_admission {
     #[test]
     fn admission_resolves_runtime_and_slot() {
         let worker = worker(
-            json!([decl("spacemit-ep", "0.2.0", json!(["c"])), decl("spacemit-triton", "0.3.1", json!(["python", "triton"]))]),
+            json!([
+                decl("spacemit-ep", "0.2.0", json!(["c"])),
+                decl("spacemit-triton", "0.3.1", json!(["python", "triton"]))
+            ]),
             json!([{"context": "x100", "runtime": "spacemit-ep", "capacity": 1}, {"context": "a100", "runtime": "spacemit-triton", "capacity": 1}]),
         );
         let placement = admit(&worker, &request(Some("spacemit-triton@0.3"), None)).unwrap();
