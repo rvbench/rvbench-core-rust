@@ -222,6 +222,14 @@ pub fn validate_request(request: &JobRequest) -> Result<()> {
         size.is_some_and(|n| n <= 16_777_216),
         "total tensor elements exceed 16777216"
     );
+    // Rank constraints come from the op contract, so they belong to every
+    // runtime rather than to any one of them. Checking them here means a new
+    // provider cannot forget to call something like this.
+    match request.op.as_str() {
+        "mm" | "mv" => ensure!(request.shape.len() == 2, "mm/mv require rank 2"),
+        "conv2d" => ensure!(request.shape.len() == 4, "conv2d requires NCHW"),
+        _ => {}
+    }
     Ok(())
 }
 
@@ -400,6 +408,36 @@ fn legacy_worker_supports_request(worker: &WorkerRegistration, request: &JobRequ
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Rank comes from the op contract, so every runtime inherits it here rather
+    /// than repeating a check of its own. A provider that forgets to validate is
+    /// the failure mode this prevents: `mm` with a rank-1 shape would reach the
+    /// kernel and fail there instead of being rejected at admission.
+    #[test]
+    fn validate_request_enforces_the_op_rank() {
+        let mut request: JobRequest =
+            serde_json::from_str(include_str!("../examples/job.json")).unwrap();
+        request.shape = vec![2, 3];
+        request.op = "add".into();
+        validate_request(&request).unwrap();
+
+        for op in ["mm", "mv"] {
+            request.op = op.into();
+            request.shape = vec![4];
+            let error = validate_request(&request).unwrap_err().to_string();
+            assert!(error.contains("rank 2"), "{op}: {error}");
+            request.shape = vec![2, 3];
+            validate_request(&request).unwrap();
+        }
+
+        request.op = "conv2d".into();
+        request.shape = vec![2, 3];
+        let error = validate_request(&request).unwrap_err().to_string();
+        assert!(error.contains("NCHW"), "{error}");
+        request.shape = vec![1, 3, 8, 8];
+        validate_request(&request).unwrap();
+    }
+
     #[test]
     fn contract_examples_and_unknown_fields() {
         let good: Value = serde_json::from_str(include_str!("../examples/job.json")).unwrap();
