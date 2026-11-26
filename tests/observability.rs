@@ -1,4 +1,4 @@
-use rvbench_protocol::*;
+use rvbench_worker_core::*;
 use serde_json::json;
 
 #[test]

@@ -2,7 +2,7 @@
   <img src="assets/rvbench-logo.svg" alt="rvbench" width="720">
 </p>
 
-# rvbench-protocol
+# rvbench-worker-core
 
 rvbench 的共享 wire 合同 crate。它是跨服务边界的唯一事实来源，负责：
 
